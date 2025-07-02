@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ANA</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #ffc0cb; /* PINK BACKGROUND */
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    .subject {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+    }
+    .subject-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .subject-name {
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+    .subject-buttons button {
+      margin: 2px;
+      padding: 4px 8px;
+    }
+    .add-form {
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid #ddd;
+    }
+    input[type="text"], input[type="number"] {
+      padding: 6px;
+      margin-right: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .status {
+      margin-top: 6px;
+    }
+    .controls {
+      margin: 10px 0;
+      text-align: center;
+    }
+    .controls button {
+      margin: 4px;
+      padding: 6px 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ANA</h1>
+  <div class="add-form">
+    <input type="text" id="subjectName" placeholder="Subject Name"/>
+    <input type="number" id="minAttendance" placeholder="Minimum % (e.g., 75)" />
+    <button onclick="addSubject()">Add Subject</button>
+  </div>
+  <div class="controls">
+    <button onclick="exportCSV()">Export to CSV</button>
+  </div>
+  <canvas id="attendanceChart" height="200"></canvas>
+  <div id="subjectsContainer"></div>
+
+  <script>
+    let subjects = [];
+
+    window.onload = function() {
+      const saved = localStorage.getItem('subjects');
+      if (saved) {
+        subjects = JSON.parse(saved);
+      }
+      renderSubjects();
+      updateChart();
+    };
+
+    function saveData() {
+      localStorage.setItem('subjects', JSON.stringify(subjects));
+    }
+
+    function addSubject() {
+      const nameInput = document.getElementById('subjectName');
+      const minInput = document.getElementById('minAttendance');
+      const name = nameInput.value.trim();
+      const minAttendance = parseFloat(minInput.value);
+
+      if (!name || isNaN(minAttendance)) {
+        alert("Please enter valid subject name and minimum attendance %.");
+        return;
+      }
+
+      subjects.push({
+        id: Date.now(),
+        name,
+        minAttendance,
+        attended: 0,
+        total: 0
+      });
+
+      nameInput.value = "";
+      minInput.value = "";
+      saveData();
+      renderSubjects();
+      updateChart();
+    }
+
+    function removeSubject(id) {
+      subjects = subjects.filter(s => s.id !== id);
+      saveData();
+      renderSubjects();
+      updateChart();
+    }
+
+    function updateAttendance(id, action) {
+      const subject = subjects.find(s => s.id === id);
+      if (!subject) return;
+
+      if (action === 'incAttend') {
+        subject.attended += 1;
+        subject.total += 1;
+      } else if (action === 'decAttend') {
+        if (subject.attended > 0) subject.attended -= 1;
+        if (subject.total > 0) subject.total -= 1;
+      } else if (action === 'incTotal') {
+        subject.total += 1;
+      } else if (action === 'decTotal') {
+        if (subject.total > 0) subject.total -= 1;
+      }
+
+      saveData();
+      renderSubjects();
+      updateChart();
+    }
+
+    function renderSubjects() {
+      const container = document.getElementById('subjectsContainer');
+      container.innerHTML = "";
+
+      subjects.forEach(subject => {
+        const attendancePercent = subject.total === 0 ? 0 : (subject.attended / subject.total) * 100;
+        const statusColor = attendancePercent >= subject.minAttendance ? "green" : "red";
+        
+        // Calculate classes needed to meet minimum attendance
+        let needed = 0;
+        if (attendancePercent < subject.minAttendance) {
+          if (subject.total === 0) {
+            needed = 1; // If no classes, attending 1 will start improving
+          } else {
+            needed = Math.ceil(
+              ((subject.minAttendance * subject.total) - (100 * subject.attended)) / (100 - subject.minAttendance)
+            );
+            if (needed < 0) needed = 0;
+          }
+        }
+
+        const div = document.createElement('div');
+        div.className = "subject";
+        div.innerHTML = `
+          <div class="subject-header">
+            <div class="subject-name">${subject.name}</div>
+            <div style="color:${statusColor}">
+              ${attendancePercent.toFixed(1)}%
+            </div>
+          </div>
+          <div class="status">
+            Attended ${subject.attended} / ${subject.total} classes
+          </div>
+          <div class="status" style="font-size:0.9em;color:#555;">
+            ${attendancePercent < subject.minAttendance ? 
+              `Attend <strong>${needed}</strong> more class(es) to reach ${subject.minAttendance}%` 
+              : `You meet the minimum attendance.`}
+          </div>
+          <div class="subject-buttons">
+            <button onclick="updateAttendance(${subject.id}, 'incAttend')">+ Attend</button>
+            <button onclick="updateAttendance(${subject.id}, 'decAttend')">- Attend</button>
+            <button onclick="updateAttendance(${subject.id}, 'incTotal')">+ Total</button>
+            <button onclick="updateAttendance(${subject.id}, 'decTotal')">- Total</button>
+            <button onclick="removeSubject(${subject.id})" style="background:#e74c3c;color:white;">Remove</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function exportCSV() {
+      let csv = "Subject,Attended,Total,Attendance %,Minimum %\n";
+      subjects.forEach(s => {
+        const percent = s.total === 0 ? 0 : (s.attended / s.total) * 100;
+        csv += `${s.name},${s.attended},${s.total},${percent.toFixed(1)},${s.minAttendance}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'attendance.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    let chart;
+    function updateChart() {
+      const ctx = document.getElementById('attendanceChart').getContext('2d');
+
+      const labels = subjects.map(s => s.name);
+      const data = subjects.map(s => s.total === 0 ? 0 : (s.attended / s.total) * 100);
+
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update();
+      } else {
+        chart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Attendance %',
+              data,
+              backgroundColor: 'rgba(54, 162, 235, 0.6)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100
+              }
+            }
+          }
+        });
+      }
+    }
+  </script>
+</body>
+</html>
